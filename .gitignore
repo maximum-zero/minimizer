@@ -34,3 +34,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+config/.env.local
+config/.env.dev
