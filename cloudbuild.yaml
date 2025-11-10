@@ -1,0 +1,83 @@
+# ----------------------------------------------------------------------
+# GCP Cloud Build CI/CD Pipeline
+# ----------------------------------------------------------------------
+
+substitutions:
+  _PROJECT_ID: ${PROJECT_ID}
+  _REPO_NAME: 'minimizer'
+  _APP_IP: '34.135.188.108'
+  _USERNAME: 'maximum_zero95'
+  _AR_REGION: 'us-central1'
+
+steps:
+  # --------------------------------------------------------------------
+  # 0. Spring Boot 앱 빌드 (Docker 이미지 생성)
+  # --------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: BUILD_IMAGE
+    args:
+      - 'build'
+      - '-t'
+      - '${_AR_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO_NAME}/minimizer-app:latest'
+      - '.'
+
+  # --------------------------------------------------------------------
+  # 1. Artifact Registry에 Docker 이미지 Push
+  # --------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: PUSH_IMAGE
+    args:
+      - 'push'
+      - '${_AR_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO_NAME}/minimizer-app:latest'
+
+  # --------------------------------------------------------------------
+  # 2. SSH 키 가져오기 (gcr.io/cloud-builders/gcloud 빌더 사용)
+  # --------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: FETCH_SSH_KEY
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        mkdir -p /root/.ssh
+        gcloud secrets versions access latest --secret="minimizer-ssh-key-secret" > /root/.ssh/cloud-build-key
+        chmod 600 /root/.ssh/cloud-build-key
+    volumes:
+      - name: 'ssh'
+        path: '/root/.ssh'
+
+
+  # --------------------------------------------------------------------
+  # 3. Live VM에 SSH 접속하여 배포 및 앱 재시작 (gcr.io/cloud-builders/gcloud 빌더 사용)
+  # --------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/gcloud'
+    id: DEPLOY_TO_VM
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        SSH_KEY_PATH=/root/.ssh/cloud-build-key
+        
+        ssh -i $${SSH_KEY_PATH} -o StrictHostKeyChecking=no ${_USERNAME}@${_APP_IP} << EOF
+          echo "Start Deployment on VM"
+        
+          cd /home/${_USERNAME}/minimizer
+        
+          git reset --hard HEAD
+          git clean -f -d
+          git pull origin main
+        
+          sudo /usr/local/bin/docker-compose --env-file config/.env.prod -f config/docker-compose-prod.yml pull
+          sudo /usr/local/bin/docker-compose --env-file config/.env.prod -f config/docker-compose-prod.yml up -d --force-recreate
+        
+        EOF
+          echo "Deployment Finished. App is running on port 8085."
+    volumes:
+      - name: 'ssh'
+        path: '/root/.ssh'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - '${_AR_REGION}-docker.pkg.dev/${_PROJECT_ID}/${_REPO_NAME}/minimizer-app:latest'
