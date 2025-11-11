@@ -22,12 +22,11 @@ RUN gradle clean build -x test --no-daemon
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
 
-# ⭐️ 빌더 스테이지에서 생성된 최종 JAR 파일만 복사해 옵니다. ⭐️
 # 파일 경로는 Spring Boot Gradle 플러그인의 기본 출력 경로를 가정합니다.
-COPY --from=builder /app/build/libs/*.jar ./
+COPY --from=builder /app/build/libs/*-SNAPSHOT.jar ./app.jar
 
 # 컨테이너 시간대를 서울 시간으로 설정 (운영 환경 관리에 유리)
 ENV TZ=Asia/Seoul
 
 # 최종 실행 명령어
-ENTRYPOINT ["sh", "-c", "java -jar /app/*.jar"]
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
